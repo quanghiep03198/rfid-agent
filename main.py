@@ -3,16 +3,23 @@ from helpers.configuration import ConfigService
 from helpers.logger import logger
 from ipaddress import ip_address
 from helpers.is_ipv4 import is_ipv4, get_ipv4_type_a
-from socketio import AsyncServer, ASGIApp
+from time import sleep
+from constants import Actions, ReaderPlayState
+import gzip
+import json
+import base64
+from decorators.throttle import throttle
+import paho.mqtt.client as mqtt
+import paho.mqtt.subscribe as mqtt_sub
 from aiohttp import web
-from asyncio import gather, run, sleep
-from constants import Actions, ReaderConnectionState, ReaderPlayState
+
+# import paho.mqtt.subscribe as mqtt
 
 
-class Application:
+class App:
 
     HOST = get_ipv4_type_a()
-    PORT = 3198
+    MQTT_PORT = 1883
 
     reader_instance: GClient | None = None
 
@@ -20,12 +27,20 @@ class Application:
     reader_port: int = ConfigService.get_env("UHF_READER_TCP_PORT", int)
 
     @property
-    def playstate(self):
-        return self.__playstate
+    def is_reader_connection_ready(self):
+        return self.__is_reader_connection_ready
 
-    @playstate.setter
-    def playstate(self, state: ReaderPlayState):
-        self.__playstate = state
+    @is_reader_connection_ready.setter
+    def is_reader_connection_ready(self, state: bool):
+        self.__is_reader_connection_ready = state
+
+    @property
+    def is_reading(self):
+        return self.__is_reading
+
+    @is_reading.setter
+    def is_reading(self, state: bool):
+        self.__is_reading = state
 
     @property
     def scanned_epcs(self):
@@ -36,25 +51,93 @@ class Application:
         self.__scanned_epcs = data
 
     def __init__(self):
-        self.__playstate = ReaderPlayState.PAUSING.value
+        self.__is_reader_connection_ready = False
+        self.__is_reading = False
         self.__scanned_epcs: set[str] = set()
-        self.gateway = web.Application()
+
+        self.mqtt_gateway = mqtt.Client(
+            callback_api_version=mqtt.CallbackAPIVersion.VERSION2,
+        )
+
+        self.mqtt_gateway.on_connect = self.__on_mqtt_gateway_connect
+        self.mqtt_gateway.on_disconnect = self.__on_mqtt_gateway_disconnect
+        self.mqtt_gateway.on_message = self.__on_mqtt_gateway_message
+        self.mqtt_gateway.connect(host=self.HOST, bind_address=self.HOST)
+        self.web_adapter = web.Application(logger=logger)
+
+    # region MQTT handlers
+
+    # * MQTT connection handlers
+    def __on_mqtt_gateway_connect(
+        self,
+        client: mqtt.Client,
+        userdata,
+        flags: mqtt.ConnectFlags,
+        reason_code_list: mqtt.ReasonCode,
+        properties: mqtt.Union[mqtt.Properties, None],
+    ):
+        print("MQTT connected with result code " + str(reason_code_list))
+        client.subscribe("rfid/signal-request")
+        client.subscribe("rfid/data")
+
+    def __on_mqtt_gateway_disconnect(
+        self,
+        client: mqtt.Client,
+        userdata,
+        flags: mqtt.ConnectFlags,
+        reason_code_list: mqtt.ReasonCode,
+        properties: mqtt.Union[mqtt.Properties, None],
+    ):
+        logger.info("MQTT connected with result code " + str(reason_code_list))
+
+    def __on_mqtt_gateway_message(
+        self, client: mqtt.Client, userdata, message: mqtt.MQTTMessage
+    ):
+        # logger.debug(f"Received message on topic {message.topic}: {message.payload}")
+        match message.topic:
+            case "rfid/signal-request":
+                logger.debug(message.payload)
+
+                client.publish(
+                    topic="rfid/signal-reply",
+                    payload=json.dumps(
+                        {
+                            "isMQTTConnectionReady": self.mqtt_gateway.is_connected(),
+                            "isReaderConnectionReady": self.is_reader_connection_ready,
+                            "isReaderPlaying": self.is_reading,
+                        }
+                    ),
+                )
+            case "rfid/data":
+                logger.debug(message.payload)
+
+    # endregion
+
+    def __publish_connection_status(self):
+        self.mqtt_gateway.publish(
+            topic="rfid/signal",
+            payload=json.dumps(
+                {
+                    "isMQTTConnectionReady": self.mqtt_gateway.is_connected(),
+                    "isReaderConnectionReady": True,
+                    "isReaderPlaying": self.is_reading,
+                }
+            ),
+        )
 
     def __connection_health_check(self):
         logger.info(f"Reader IP from config: {self.reader_ip}")
-        if not is_ipv4(self.reader_ip):
-            while self.__set_config_reader_ip() == False:
-                result = self.__set_config_reader_ip()
-                if result:
-                    break
 
-    async def __handle_receive_epc(self, data: LogBaseEpcInfo):
-        # Skip if already scanned
-        if data.epc in self.scanned_epcs:
+    def __handle_receive_epc(self, data: LogBaseEpcInfo):
+        epc = data.epc.upper()
+        if epc in self.scanned_epcs:
             return
-        logger.info(f"New EPC detected: {data.epc}")
-        self.scanned_epcs.add(data.epc)
-        await socket.emit("data", data.epc.upper())
+        logger.info(f"New EPC detected: {epc}")
+        self.scanned_epcs.add(epc)
+        # payload = json.dumps(list(self.scanned_epcs)).encode("utf-8")
+        self.mqtt_client.publish("rfid", epc)
+
+    # @throttle(1.0)
 
     def __handle_receive_epc_end(self, log: LogBaseEpcOver):
         logger.info(f"Stopped with message id: >>> {log.msgId}")
@@ -72,40 +155,46 @@ class Application:
             logger.info("Invalid IP address. Please try again.")
             return False
 
-    async def __handle_close_reader_connection(self):
-        await gather(
-            socket.emit(
-                "connection", {"signal": ReaderConnectionState.DISCONNECTING.value}
-            ),
-            socket.emit("playstate", {"signal": ReaderPlayState.PAUSING.value}),
-        )
+    def __handle_close_reader_connection(self):
+        self.is_reader_connection_ready = False
         if self.reader_instance is not None:
             self.reader_instance.close()
             self.reader_instance.callTcpDisconnect
             self.reader_instance = None
-            self.playstate = ReaderPlayState.PAUSING.value
-
-    async def __handle_open_reader_connection(self):
-        await socket.emit(
-            "connection", {"signal": ReaderConnectionState.CONNECTING.value}
+            self.is_reading = False
+        self.mqtt_gateway.publish(
+            topic="rfid/signal",
+            payload=json.dumps(
+                {
+                    "isMQTTConnectionReady": self.mqtt_gateway.is_connected(),
+                    "isReaderConnectionReady": False,
+                    "isReaderPlaying": False,
+                }
+            ),
         )
+
+    def __handle_open_reader_connection(self):
+
         if self.reader_instance is None:
             self.reader_instance = GClient()
-        if self.reader_instance.openTcp((self.reader_ip, self.reader_port)):
-            self.reader_instance.callEpcOver = self.__handle_receive_epc_end
-            self.reader_instance.callEpcInfo = lambda data: run(
-                self.__handle_receive_epc(data)
-            )
 
-    async def handle_toggle_connect_reader(self, signal: str):
+        self.is_reader_connection_ready = self.reader_instance.openTcp(
+            (self.reader_ip, self.reader_port)
+        )
+        if self.is_reader_connection_ready:
+            self.reader_instance.callEpcOver = self.__handle_receive_epc_end
+            self.reader_instance.callEpcInfo = self.__handle_receive_epc
+
+            self.__publish_connection_status()
+
+    def handle_toggle_connect_reader(self, signal: str):
         match signal:
             case Actions.DISCONNECT.value:
-                await self.__handle_close_reader_connection()
+                self.__handle_close_reader_connection()
             case Actions.CONNECT.value:
-                await self.__handle_open_reader_connection()
+                self.__handle_open_reader_connection()
 
-    async def __handle_start_reading(self):
-        await socket.emit("playstate", {"signal": ReaderPlayState.PLAYING.value})
+    def __handle_start_reading(self):
 
         # * Set beep sound
         self.reader_instance.sendSynMsg(MsgAppSetBeep(0, 0))
@@ -142,74 +231,114 @@ class Application:
             )
         )
 
-        self.playstate = ReaderPlayState.PLAYING.value
+        self.is_reading = False
 
-    async def __handle_stop_reading(self):
-        await socket.emit("playstate", {"signal": ReaderPlayState.PAUSING.value})
+    def __handle_stop_reading(self):
+        socket.emit("is_reading", {"signal": False})
 
         res = self.reader_instance.sendSynMsg(MsgBaseStop())
         if isinstance(res, int):
             logger.info(f"Stop reading signal :>>>> {res}")
 
-    async def handle_toggle_reading(self, signal: Actions):
+    def handle_toggle_reading(self, signal: Actions):
         match signal:
             case Actions.PLAY.value:
-                await self.__handle_start_reading()
+                self.__handle_start_reading()
             case Actions.PAUSE.value:
-                await self.__handle_stop_reading()
+                self.__handle_stop_reading()
 
     def __bootstrap__(self):
-        self.__connection_health_check()
-        web.run_app(self.gateway, host=self.HOST, port=self.PORT)
+
+        self.mqtt_gateway.loop_forever()
+        try:
+            self.mqtt_gateway.publish(
+                topic="rfid/signal-reply",
+                payload=json.dumps(
+                    {
+                        "isMQTTConnectionReady": self.mqtt_gateway.is_connected(),
+                        "isReaderConnectionReady": self.is_reader_connection_ready,
+                        "isReaderPlaying": self.is_reading,
+                    }
+                ),
+            )
+
+        except KeyboardInterrupt:
+            logger.info("Shutting down the application.")
+            self.__handle_close_reader_connection()
+        finally:
+            self.mqtt_gateway.loop_stop()
+            self.mqtt_gateway.disconnect()
+            # self.mqtt_gateway.disconnect()
+        # eventlet.wsgi.server(eventlet.listen((self.HOST, self.PORT)), app)
 
 
 if __name__ == "__main__":
-    socket = AsyncServer(cors_allowed_origins="*")
-    app = Application()
-    socket.attach(app.gateway)
+    app = App()
+    app.__bootstrap__()
 
-    @socket.event
-    async def connect(sid, _environ):
-        logger.info(f"Client connected: {sid}")
-        await gather(
-            socket.emit(
-                "connection",
-                {
-                    "signal": (
-                        ReaderConnectionState.CONNECTING.value
-                        if app.reader_instance is not None
-                        else ReaderConnectionState.DISCONNECTING.value
-                    )
-                },
-                to=sid,
-            ),
-            socket.emit("playstate", {"signal": app.playstate}, to=sid),
-            socket.emit(
-                "settings",
-                {
-                    "ip": app.reader_ip,
-                    "port": app.reader_port,
-                },
-                to=sid,
-            ),
-        )
+    # socket = AsyncServer(
+    #     async_mode="aiohttp",
+    #     cors_allowed_origins="*",
+    # )
+    # socket.attach(app.web_adapter)
+    # mqtt_client = mqtt.Client(
+    #     callback_api_version=mqtt.CallbackAPIVersion.VERSION2,
+    # )
+    # mqtt_client.connect(host=app.HOST, bind_address=app.HOST)
 
-    @socket.on("connection")
-    async def on_rfid_connection_change(_, data: dict):
-        print(data)
-        await app.handle_toggle_connect_reader(data.get("signal"))
+    # def on_mqtt_connect(_client, _userdata, _flags, rc):
+    #     print("MQTT connected with result code " + str(rc))
 
-    @socket.on("playstate")
-    async def on_rfid_playstate_change(_, data: dict):
-        print(data)
-        await app.handle_toggle_reading(data.get("signal"))
+    # mqtt_client.on_connect = on_mqtt_connect
 
-    @socket.on("data")
-    async def on_rfid_playstate_change(_sid, _data):
-        app.scanned_epcs.clear()
+    # @socket.event
+    # def connect(sid, _environ):
+    #     logger.info(f"Client connected: {sid}")
+    #     gather(
+    #         socket.emit(
+    #             "connection",
+    #             {
+    #                 "signal": (
+    #                     ReaderConnectionState.CONNECTING.value
+    #                     if app.reader_instance is not None
+    #                     else ReaderConnectionState.DISCONNECTING.value
+    #                 )
+    #             },
+    #             to=sid,
+    #         ),
+    #         socket.emit("is_reading", {"signal": app.is_reading}, to=sid),
+    #         socket.emit(
+    #             "settings",
+    #             {
+    #                 "ip": app.reader_ip,
+    #                 "port": app.reader_port,
+    #             },
+    #             to=sid,
+    #         ),
+    #     )
+
+    # @socket.on("connection")
+    # def on_rfid_connection_change(_, data: dict):
+    #     print(data)
+    #     app.handle_toggle_connect_reader(data.get("signal"))
+
+    # @socket.on("is_reading")
+    # def on_rfid_playstate_change(_, data: dict):
+    #     print(data)
+    #     app.handle_toggle_reading(data.get("signal"))
+
+    # @socket.on("data")
+    # def on_rfid_playstate_change(_sid, _data):
+    #     if _data == "reset":
+    #         app.scanned_epcs.clear()
+    #     if _data == "refresh":
+    #         compressed_data = base64.b64encode(
+    #             gzip.compress(json.dumps(list(app.scanned_epcs)).encode("utf-8"))
+    #         ).decode("utf-8")
+    #         socket.emit("data", compressed_data)
 
     # @socket.on("settings")
     # def on_settings_change(_, data: dict):
     #     logger.debug(data)
 
-    app.__bootstrap__()
+    # app.__bootstrap__()
