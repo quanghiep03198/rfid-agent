@@ -17,9 +17,30 @@ logger.setLevel(logging.DEBUG)  # Đặt mức log tổng thể
 # Tạo console handler để hiển thị log trên console
 console_handler = logging.StreamHandler()
 console_handler.setLevel(logging.DEBUG)  # Hiển thị tất cả log từ DEBUG trở lên
+
+
+class CustomFormatter(logging.Formatter):
+    # Định nghĩa màu cho các level
+    COLORS = {
+        "DEBUG": "\033[94m",  # Màu xanh dương
+        "INFO": "\033[92m",  # Màu xanh lá
+        "WARNING": "\033[93m",  # Màu vàng
+        "ERROR": "\033[91m",  # Màu đỏ
+        "CRITICAL": "\033[95m",  # Màu tím
+    }
+    RESET = "\033[0m"  # Reset màu
+
+    def format(self, record):
+        levelname = record.levelname
+        if levelname in self.COLORS:
+            record.levelname = f"{self.COLORS[levelname]}{levelname}{self.RESET}"
+        return super().format(record)
+
+
 console_handler.setFormatter(
-    logging.Formatter(
-        "%(asctime)s - [%(levelname)s] - %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
+    CustomFormatter(
+        "\033[90m%(asctime)s\033[0m - [%(levelname)s] - %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
     )
 )
 

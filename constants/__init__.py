@@ -5,17 +5,20 @@ from enum import Enum, unique
 class Actions(Enum):
     CONNECT = "connect"
     DISCONNECT = "disconnect"
-    PLAY = "play"
-    PAUSE = "pause"
+    START = "start"
+    STOP = "stop"
+    PING = "ping"
 
 
 @unique
-class ReaderConnectionState(Enum):
-    CONNECTING = "connecting"
-    DISCONNECTING = "disconnecting"
+class PublishTopics(Enum):
+    REPLY_SIGNAL = "reply/signal"
+    REPLY_DATA = "reply/data"
+    REPLY_SETTINGS = "reply/settings"
 
 
 @unique
-class ReaderPlayState(Enum):
-    PLAYING = "playing"
-    PAUSING = "pausing"
+class SubscribeTopics(Enum):
+    REQUEST_SIGNAL = "request/signal"
+    REQUEST_DATA = "request/data"
+    REQUEST_SETTINGS = "request/settings"
