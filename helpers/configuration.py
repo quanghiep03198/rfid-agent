@@ -17,10 +17,10 @@ __cfg_file__ = path.abspath(
 if not path.exists(__cfg_file__):
     with open(__cfg_file__, "w", encoding="utf-8") as configfile:
         configfile.write(f"[{ConfigSection.READER.value}]\n")
-        configfile.write("UHF_READER_TCP_IP = \n")
-        configfile.write("UHF_READER_TCP_PORT = 8160\n")
-        configfile.write("UHF_READER_ANT = 1\n")
-        configfile.write("UHF_READER_POWER = 10")
+        configfile.write("uhf_reader_tcp_ip = \n")
+        configfile.write("uhf_reader_tcp_port = 8160\n")
+        configfile.write("uhf_reader_ant = 1\n")
+        configfile.write("uhf_reader_power = 10")
 __configs__ = ConfigParser()
 __configs__.read(filenames=__cfg_file__)
 
