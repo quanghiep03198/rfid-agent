@@ -5,9 +5,9 @@ from functools import wraps
 
 def throttle(interval: float):
     """
-    Throttle decorator: đảm bảo hàm được gọi ngay lập tức lần đầu tiên (leading)
-    và gọi lần cuối cùng (trailing) sau khoảng thời gian `interval`.
-    Hỗ trợ cả hàm đồng bộ và bất đồng bộ.
+    Throttle decorator: ensures the function executes immediately on the first call (leading)
+    and is called one last time (trailing) after the `interval`.
+    Supports both synchronous and asynchronous functions.
     """
 
     def decorator(func):
@@ -20,11 +20,11 @@ def throttle(interval: float):
             async with lock:
                 now = time.time()
                 if now - last_called["time"] >= interval:
-                    # Gọi ngay lập tức nếu đã qua interval
+                    # Call immediately if interval has passed
                     last_called["time"] = now
                     return await func(*args, **kwargs)
                 elif not trailing_call["scheduled"]:
-                    # Lên lịch gọi lần cuối (trailing)
+                    # Schedule the trailing call if not already scheduled
                     trailing_call["scheduled"] = True
 
                     async def call_later():
@@ -40,11 +40,11 @@ def throttle(interval: float):
         def sync_wrapper(*args, **kwargs):
             now = time.time()
             if now - last_called["time"] >= interval:
-                # Gọi ngay lập tức nếu đã qua interval
+                # Call immediately if interval has passed
                 last_called["time"] = now
                 return func(*args, **kwargs)
             elif not trailing_call["scheduled"]:
-                # Lên lịch gọi lần cuối (trailing)
+                # Schedule the trailing call if not already scheduled
                 trailing_call["scheduled"] = True
 
                 def call_later():
@@ -57,7 +57,7 @@ def throttle(interval: float):
 
                 threading.Thread(target=call_later).start()
 
-        # Kiểm tra xem hàm có phải async không
+        # Return the appropriate wrapper based on whether func is async or sync
         if asyncio.iscoroutinefunction(func):
             return async_wrapper
         else:
