@@ -2,7 +2,7 @@ from uhf.reader import *
 from helpers.configuration import ConfigService, ConfigSection
 from constants import Actions, PublishTopics, SubscribeTopics
 from helpers.logger import logger
-from helpers.is_ipv4 import is_ipv4, get_ipv4_type_a
+from helpers.ipv4 import is_ipv4, get_ipv4_type_a
 from gzip import compress
 from json import loads, dumps, JSONDecodeError
 from base64 import b64encode
@@ -104,6 +104,9 @@ class Application:
 
     def bootstrap(self):
         try:
+            print(
+                "============================== RFID Agent - version 1.0.0 =============================="
+            )
             self.mqtt_gateway.loop_forever()
             self.mqtt_gateway.publish(
                 topic=PublishTopics.REPLY_SIGNAL.value,
@@ -132,7 +135,7 @@ class Application:
         properties: mqtt.Union[mqtt.Properties, None],
     ):
         logger.info(f"MQTT connected with status '{str(reason_code_list)}'")
-        logger.info(">>> Press Ctrl+C to exit <<<")
+        logger.info(">>> Press Ctrl + C to exit <<<")
 
         client.subscribe(SubscribeTopics.REQUEST_SIGNAL.value)
         client.subscribe(SubscribeTopics.REQUEST_DATA.value)
