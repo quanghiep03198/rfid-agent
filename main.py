@@ -2,7 +2,7 @@ from uhf.reader import *
 from helpers.configuration import ConfigService, ConfigSection
 from constants import Actions, PublishTopics, SubscribeTopics
 from helpers.logger import logger
-from helpers.ipv4 import is_ipv4, get_ipv4_type_a
+from helpers.ipv4 import is_ipv4, get_ipv4
 from gzip import compress
 from json import loads, dumps, JSONDecodeError
 from base64 import b64encode
@@ -12,8 +12,15 @@ from threading import Thread
 
 class Application:
 
-    HOST = get_ipv4_type_a()
+    HOST = get_ipv4()
+    """
+    Host IP address for MQTT broker connection.
+    """
+
     MQTT_PORT = 1883
+    """
+    MQTT broker port.
+    """
 
     reader_instance: GClient | None = None
 
@@ -93,20 +100,30 @@ class Application:
             section=ConfigSection.READER.value, key="uhf_reader_power"
         )
 
-        self.mqtt_gateway = mqtt.Client(
-            callback_api_version=mqtt.CallbackAPIVersion.VERSION2,
-        )
-
-        self.mqtt_gateway.on_connect = self.__on_mqtt_gateway_connect
-        self.mqtt_gateway.on_disconnect = self.__on_mqtt_gateway_disconnect
-        self.mqtt_gateway.on_message = self.__on_mqtt_gateway_message
-        self.mqtt_gateway.connect(host=self.HOST, bind_address=self.HOST)
-
-    def bootstrap(self):
+    def bootstrap(self) -> None:
+        """
+        Start the main application loop, handling MQTT and UHF reader interactions.
+        This method runs indefinitely until interrupted, managing connections and data flow.
+        """
         try:
             print(
                 "============================== RFID Agent - version 1.0.0 =============================="
             )
+            self.__init_mqtt_gateway()
+        except KeyboardInterrupt:
+            logger.info("Shutting down the application...")
+            self.__handle_close_reader_connection()
+
+    # region MQTT handlers
+    def __init_mqtt_gateway(self) -> None:
+        try:
+            self.mqtt_gateway = mqtt.Client(
+                callback_api_version=mqtt.CallbackAPIVersion.VERSION2,
+            )
+            self.mqtt_gateway.on_connect = self.__on_mqtt_gateway_connect
+            self.mqtt_gateway.on_disconnect = self.__on_mqtt_gateway_disconnect
+            self.mqtt_gateway.on_message = self.__on_mqtt_gateway_message
+            self.mqtt_gateway.connect(host=self.HOST, bind_address=self.HOST)
             self.mqtt_gateway.loop_forever()
             self.mqtt_gateway.publish(
                 topic=PublishTopics.REPLY_SIGNAL.value,
@@ -118,14 +135,12 @@ class Application:
                     }
                 ).encode(),
             )
-        except KeyboardInterrupt:
-            logger.info("Shutting down the application...")
-            self.__handle_close_reader_connection()
+        except Exception as e:
+            logger.error(f"Failed to initialize MQTT client: {e}")
         finally:
             self.mqtt_gateway.loop_stop()
             self.mqtt_gateway.disconnect()
 
-    # region MQTT handlers
     def __on_mqtt_gateway_connect(
         self,
         client: mqtt.Client,
@@ -403,6 +418,10 @@ class Application:
         if self.is_reader_connection_ready:
             self.reader_instance.callEpcOver = self.__handle_receive_epc_end
             self.reader_instance.callEpcInfo = self.__handle_receive_epc
+        else:
+            logger.warning(
+                "Cannot to connect to the reader. Please check your TCP/IP settings, and device connection."
+            )
         self.__publish_connection_status()
 
     def __handle_close_reader_connection(self):
