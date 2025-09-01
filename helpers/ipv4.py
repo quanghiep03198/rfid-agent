@@ -16,7 +16,10 @@ def is_ipv4(value: str | None):
         return False
 
 
-def get_ipv4_type_a():
+def get_ipv4():
+    """
+    Get the local machine's IPv4 address, prioritizing addresses in the 10.x.x.x range.
+    """
     hostname = socket.gethostname()
     local_ip = socket.gethostbyname(hostname)
     ips = socket.gethostbyname_ex(hostname)[2]
