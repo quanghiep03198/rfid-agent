@@ -2,6 +2,7 @@ dist
 build
 venv
 logs
+private
 .env
 .config
 *.spec
