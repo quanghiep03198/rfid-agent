@@ -6,11 +6,11 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
-- Initial project setup.
+- New logo icon for application
 
 ### Changed
 
-- No changes yet.
+- Build script.
 
 ### Fixed
 
@@ -18,7 +18,7 @@ All notable changes to this project will be documented in this file.
 
 ---
 
-## [0.1.0] - 2025-08-30
+## [1.0.0] - 2025-09-01
 
 ### Added
 
