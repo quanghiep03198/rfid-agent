@@ -123,7 +123,10 @@ class Application:
             self.mqtt_gateway.on_connect = self.__on_mqtt_gateway_connect
             self.mqtt_gateway.on_disconnect = self.__on_mqtt_gateway_disconnect
             self.mqtt_gateway.on_message = self.__on_mqtt_gateway_message
-            self.mqtt_gateway.connect(host=self.HOST, bind_address=self.HOST)
+            self.mqtt_gateway.connect(
+                host=self.HOST,
+                bind_address=self.HOST,
+            )
             self.mqtt_gateway.loop_forever()
             self.mqtt_gateway.publish(
                 topic=PublishTopics.REPLY_SIGNAL.value,
@@ -199,6 +202,8 @@ class Application:
                 match action:
                     case Actions.PING.value:
                         self.__publish_connection_status()
+                        self.__handle_publish_data()
+
                     case Actions.CONNECT.value:
                         Thread(
                             target=self.__handle_open_reader_connection,
@@ -259,6 +264,12 @@ class Application:
         encoded_data = b64encode(compressed_data).decode()
         return encoded_data
 
+    def __handle_publish_data(self) -> None:
+        compressed_data = self.__compress_data(data=self.scanned_epcs)
+        self.mqtt_gateway.publish(
+            topic=PublishTopics.REPLY_DATA.value, payload=compressed_data
+        )
+
     def __handle_receive_epc(self, data: LogBaseEpcInfo) -> None:
         """
         Handle incoming EPC data from the UHF reader.
@@ -268,10 +279,7 @@ class Application:
             return
         logger.info(f"EPC :>>> {epc}")
         self.scanned_epcs.add(epc)
-        compressed_data = self.__compress_data(data=self.scanned_epcs)
-        self.mqtt_gateway.publish(
-            topic=PublishTopics.REPLY_DATA.value, payload=compressed_data
-        )
+        self.__handle_publish_data()
 
     def __handle_receive_epc_end(self, log: LogBaseEpcOver) -> None:
         logger.info(f"Stopped reading EPC with code: >>> {log.msgId}")
