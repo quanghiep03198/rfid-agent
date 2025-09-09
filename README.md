@@ -81,6 +81,85 @@
    python main.py
    ```
 
+## Testing
+
+### Running Tests
+
+This project includes comprehensive test coverage for all modules. To run tests:
+
+```bash
+# Run all tests
+python -m pytest
+
+# Run tests with coverage
+python -m pytest --cov=. --cov-report=html
+
+# Run specific test files
+python -m pytest tests/test_main.py
+python -m pytest tests/helpers/
+python -m pytest tests/decorators/
+
+# Run tests with different verbosity
+python -m pytest -v                    # verbose
+python -m pytest -q                    # quiet
+python -m pytest -x                    # stop on first failure
+```
+
+### Test Categories
+
+- **Unit Tests**: Test individual functions and methods
+- **Integration Tests**: Test component interactions
+- **Mock Tests**: Test with mocked MQTT and TCP connections
+
+### Pre-commit Testing
+
+Use the provided scripts to run all checks before committing:
+
+```bash
+# Linux/macOS
+./scripts/test.sh
+
+# Windows
+scripts\test.bat
+```
+
+### Continuous Integration
+
+Tests run automatically on GitHub Actions for:
+
+- Python 3.10, 3.11, 3.12
+- Multiple operating systems (Ubuntu, Windows, macOS)
+- Code quality checks (flake8, mypy)
+- Security scans (bandit, safety)
+- Coverage reporting
+
+## Development
+
+### Code Quality
+
+This project uses several tools to maintain code quality:
+
+- **Black**: Code formatting
+- **isort**: Import sorting
+- **flake8**: Linting
+- **mypy**: Type checking
+- **bandit**: Security scanning
+
+Install development dependencies:
+
+```bash
+pip install black isort flake8 mypy bandit safety coverage-badge
+```
+
+### Pre-commit Hooks
+
+Install pre-commit hooks to automatically check code quality:
+
+```bash
+pip install pre-commit
+pre-commit install
+```
+
 ## Contribution
 
 Feel free to fork this repository and submit pull requests. For major changes, please open an issue first to discuss what you would like to change.
