@@ -1,13 +1,15 @@
-from uhf.reader import *
-from helpers.configuration import ConfigService, ConfigSection
-from constants import Actions, PublishTopics, SubscribeTopics
-from helpers.logger import logger
-from helpers.ipv4 import is_ipv4, get_ipv4
-from gzip import compress
-from json import loads, dumps, JSONDecodeError
 from base64 import b64encode
-import paho.mqtt.client as mqtt
+from gzip import compress
+from json import JSONDecodeError, dumps, loads
 from threading import Thread
+
+import paho.mqtt.client as mqtt
+from uhf.reader import *
+
+from constants import Actions, PublishTopics, SubscribeTopics
+from helpers.configuration import ConfigSection, ConfigService
+from helpers.ipv4 import get_ipv4, is_ipv4
+from helpers.logger import logger
 
 
 class Application:

@@ -1,6 +1,7 @@
-from ipaddress import ip_address
-from helpers.logger import logger
 import socket
+from ipaddress import ip_address
+
+from helpers.logger import logger
 
 
 def is_ipv4(value: str | None):
