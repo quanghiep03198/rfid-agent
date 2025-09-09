@@ -1,8 +1,9 @@
-from os import path
 from configparser import ConfigParser
-from helpers.logger import logger
 from enum import Enum
+from os import path
 from typing import Any, Callable
+
+from helpers.logger import logger
 
 # from pathlib import Path
 
