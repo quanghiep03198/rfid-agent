@@ -61,7 +61,11 @@ class TestApplication:
             mock_logger.info.assert_called_with("Reader port updated to: 9000")
 
     def test_reader_ant_property(self, app):
-        """Test reader_ant property getter and setter."""
+        """Test reader_ant property getter and setter.
+
+        Note: Although the type hint suggests EnumG, the actual implementation
+        stores and returns string values from configuration.
+        """
         assert app.reader_ant == "1"
 
         with patch("main.logger") as mock_logger:
@@ -70,7 +74,11 @@ class TestApplication:
             mock_logger.info.assert_called_with("Reader antenna updated to: 2")
 
     def test_reader_power_property(self, app):
-        """Test reader_power property getter and setter."""
+        """Test reader_power property getter and setter.
+
+        Note: Although the type hint suggests EnumG, the actual implementation
+        stores and returns string values from configuration.
+        """
         assert app.reader_power == "10"
 
         with patch("main.logger") as mock_logger:
@@ -99,6 +107,24 @@ class TestApplication:
         test_epcs = {"EPC001", "EPC002"}
         app.scanned_epcs = test_epcs
         assert app.scanned_epcs == test_epcs
+
+    def test_property_types_behavior(self, app):
+        """Test that properties behave as strings despite EnumG type hints.
+
+        This test documents the current implementation where reader_ant and
+        reader_power properties use EnumG type hints but actually store/return strings.
+        """
+        # These properties should return strings, not EnumG instances
+        assert isinstance(app.reader_ant, str)
+        assert isinstance(app.reader_power, str)
+        assert isinstance(app.reader_ip, str)
+        assert isinstance(app.reader_port, str)
+
+        # Verify they can be set with string values
+        app.reader_ant = "3"
+        app.reader_power = "20"
+        assert app.reader_ant == "3"
+        assert app.reader_power == "20"
 
     @patch("main.logger")
     @patch("builtins.print")
