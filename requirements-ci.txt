@@ -1,13 +1,6 @@
-# Core application dependencies
+# Core dependencies for CI testing (excluding Windows-specific packages)
 paho-mqtt==2.1.0
 uhfReaderApi==1.1.1
-
-# Windows-specific dependencies
-pywin32==311; sys_platform == "win32"
-pywin32-ctypes==0.2.3; sys_platform == "win32"
-
-# Build and packaging
-pyinstaller==6.15.0
 
 # Testing dependencies
 pytest==8.4.2
@@ -18,7 +11,7 @@ pytest-mock==3.15.0
 # Coverage reporting
 coverage==7.10.6
 
-# Development tools
+# Development tools for CI
 black==24.10.0
 isort==5.13.2
 mypy==1.13.0
