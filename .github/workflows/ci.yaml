@@ -168,23 +168,54 @@ jobs:
   release:
     runs-on: ubuntu-latest
     needs: [test, security-scan, build]
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push' && contains(github.event.head_commit.message, 'release:')
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get version from commit message or generate one
+        id: get_version
+        run: |
+          # Try to extract version from commit message (e.g., "release: v1.2.3")
+          VERSION=$(echo "${{ github.event.head_commit.message }}" | grep -oP 'release:\s*v?\K[\d\.]+' || echo "")
+
+          if [ -z "$VERSION" ]; then
+            # Fallback: generate version based on date and run number
+            DATE=$(date +'%Y.%m.%d')
+            VERSION="${DATE}.${GITHUB_RUN_NUMBER}"
+          fi
+
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "tag_name=v${VERSION}" >> $GITHUB_OUTPUT
+
+      - name: Check if tag exists
+        id: check_tag
+        run: |
+          TAG_NAME="${{ steps.get_version.outputs.tag_name }}"
+          if git rev-parse "$TAG_NAME" >/dev/null 2>&1; then
+            echo "Tag $TAG_NAME already exists!"
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "Tag $TAG_NAME does not exist, proceeding with release"
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
 
       - name: Download all artifacts
+        if: steps.check_tag.outputs.exists == 'false'
         uses: actions/download-artifact@v4
 
       - name: Create Release
+        if: steps.check_tag.outputs.exists == 'false'
         id: create_release
         uses: softprops/action-gh-release@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tag_name: v${{ github.run_number }}
-          name: Release v${{ github.run_number }}
+          tag_name: ${{ steps.get_version.outputs.tag_name }}
+          name: Release ${{ steps.get_version.outputs.tag_name }}
           body: |
             Automated release from commit ${{ github.sha }}
 
@@ -195,12 +226,23 @@ jobs:
 
             ## Test Coverage
             Check the artifacts for detailed coverage reports.
+
+            ## Downloads
+            - **Windows**: RFID-Agent.exe
+            - **Linux**: rfid-agent (Linux executable)
+            - **macOS**: rfid-agent (macOS executable)
           draft: false
           prerelease: false
           files: |
             executable-ubuntu-latest/*
             executable-windows-latest/*
             executable-macos-latest/*
+          make_latest: true
+
+      - name: Release skipped
+        if: steps.check_tag.outputs.exists == 'true'
+        run: |
+          echo "⚠️ Release skipped: Tag ${{ steps.get_version.outputs.tag_name }} already exists"
 
   notify:
     runs-on: ubuntu-latest
@@ -213,6 +255,9 @@ jobs:
         run: |
           echo "✅ All CI/CD pipeline steps completed successfully!"
           echo "Tests passed, security scans clean, builds successful."
+          echo ""
+          echo "💡 To create a release, use the 'Create Release' workflow with manual trigger"
+          echo "   Go to Actions → Create Release → Run workflow"
 
       - name: Notify on failure
         if: needs.test.result == 'failure' || needs.security-scan.result == 'failure' || needs.build.result == 'failure'
