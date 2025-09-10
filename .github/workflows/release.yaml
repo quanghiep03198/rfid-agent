@@ -19,10 +19,9 @@ permissions:
 
 jobs:
   build:
-    runs-on: ${{ matrix.os }}
+    runs-on: windows-latest
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
         python-version: ["3.12"]
 
     steps:
@@ -37,30 +36,19 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          if [ "${{ matrix.os }}" = "windows-latest" ]; then
-            pip install -r requirements.txt
-          else
-            pip install -r requirements-ci.txt
-          fi
+          pip install -r requirements.txt
           pip install pyinstaller
-        shell: bash
 
-      - name: Build executable (Windows)
-        if: matrix.os == 'windows-latest'
+      - name: Build executable using build script
         run: |
-          pyinstaller --onefile --windowed --icon=icon.ico --name="RFID-Agent-v${{ inputs.version }}" main.py
-
-      - name: Build executable (Linux/macOS)
-        if: matrix.os != 'windows-latest'
-        run: |
-          pyinstaller --onefile --name="rfid-agent-v${{ inputs.version }}" main.py
+          scripts\build.bat
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: executable-${{ matrix.os }}
+          name: executable-windows
           path: |
-            dist/*
+            dist/
 
   release:
     runs-on: ubuntu-latest
@@ -90,6 +78,37 @@ jobs:
       - name: Download all artifacts
         uses: actions/download-artifact@v4
 
+      - name: Archive RFID Agent folder
+        run: |
+          # Check if the RFID Agent folder exists in the downloaded artifacts
+          if [ -d "executable-windows/RFID Agent" ]; then
+            echo "Found RFID Agent folder, creating ZIP archive..."
+            cd "executable-windows"
+            # Create ZIP archive for Windows compatibility
+            zip -r "../RFID-Agent-v${{ inputs.version }}-portable.zip" "RFID Agent"
+            cd ..
+            echo "Archive created: RFID-Agent-v${{ inputs.version }}-portable.zip"
+            ls -la *.zip
+          else
+            echo "RFID Agent folder not found in artifacts"
+            echo "Available files in executable-windows:"
+            ls -la executable-windows/ || echo "executable-windows directory not found"
+          fi
+
+      - name: Prepare installation assets
+        run: |
+          # Create a directory for release assets
+          mkdir -p release-assets
+
+          # Copy installation files if they exist
+          if [ -d "installation" ]; then
+            echo "Found installation folder, copying files..."
+            cp -r installation/* release-assets/ 2>/dev/null || true
+            ls -la release-assets/
+          else
+            echo "No installation folder found"
+          fi
+
       - name: Generate changelog
         id: changelog
         run: |
@@ -108,13 +127,22 @@ jobs:
           ${COMMITS}
 
           ## Downloads
-          - **Windows**: RFID-Agent-v${{ inputs.version }}.exe
-          - **Linux**: rfid-agent-v${{ inputs.version }} (Linux executable)
-          - **macOS**: rfid-agent-v${{ inputs.version }} (macOS executable)
+          - **Windows Portable**: RFID-Agent-v${{ inputs.version }}-portable.zip (Complete application folder)
+          - **Windows Installer**: Available in installation assets (if included)
 
           ## Installation
-          Download the appropriate executable for your platform and run it directly.
-          No additional installation required.
+
+          ### Option 1: Portable Version (Recommended)
+          1. Download \`RFID-Agent-v${{ inputs.version }}-portable.zip\`
+          2. Extract the ZIP file to your desired location
+          3. Run \`RFID Agent.exe\` from the extracted folder
+
+          ### Option 2: Use Installer (if available)
+          Download and run the installer from the release assets.
+
+          ## System Requirements
+          - Windows 10 or later
+          - No additional dependencies required
           EOF
 
       - name: Create Release
@@ -128,9 +156,9 @@ jobs:
           draft: false
           prerelease: ${{ inputs.prerelease }}
           files: |
-            executable-ubuntu-latest/*
-            executable-windows-latest/*
-            executable-macos-latest/*
+            executable-windows/*
+            release-assets/*
+            RFID-Agent-v${{ inputs.version }}-portable.zip
           make_latest: ${{ !inputs.prerelease }}
 
       - name: Success notification
