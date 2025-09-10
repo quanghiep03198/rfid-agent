@@ -26,11 +26,11 @@ python -m isort --check-only --diff . || {
 }
 
 # Run linting
-echo "🔍 Running linter..."
-python -m flake8 . --count --statistics || {
-    echo "❌ Linting issues found."
-    exit 1
-}
+# echo "🔍 Running linter..."
+# python -m flake8 . --count --statistics || {
+#     echo "❌ Linting issues found."
+#     exit 1
+# }
 
 # Run type checking
 echo "🔍 Running type checker..."

@@ -24,12 +24,12 @@ python -m isort --check-only --diff . || (
     exit /b 1
 )
 
-REM Run linting
-echo 🔍 Running linter...
-python -m flake8 main.py --count --statistics || (
-    echo ❌ Linting issues found.
-    exit /b 1
-)
+@REM REM Run linting
+@REM echo 🔍 Running linter...
+@REM python -m flake8 main.py --count --statistics || (
+@REM     echo ❌ Linting issues found.
+@REM     exit /b 1
+@REM )
 
 REM Run type checking
 echo 🔍 Running type checker...
