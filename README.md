@@ -160,6 +160,30 @@ pip install pre-commit
 pre-commit install
 ```
 
+## Building Executable
+
+Create standalone executables for distribution:
+
+### Windows
+
+```batch
+scripts\build.bat
+```
+
+### Linux/macOS
+
+```bash
+# Make script executable (one time)
+chmod +x scripts/build.sh
+
+# Build application
+./scripts/build.sh
+```
+
+All build scripts create a `dist/RFID Agent/` directory containing the complete application with all dependencies.
+
+For more details, see [scripts/README.md](scripts/README.md).
+
 ## Contribution
 
 Feel free to fork this repository and submit pull requests. For major changes, please open an issue first to discuss what you would like to change.

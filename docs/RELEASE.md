@@ -106,7 +106,7 @@ so you don't need to manually update portable packages.
 
 ## Build Scripts
 
-Use the enhanced build scripts to create installation packages:
+Use the build scripts to create installation packages across different platforms:
 
 ### Windows (`scripts/build.bat`)
 
@@ -119,6 +119,33 @@ Creates:
 - Complete application folder in `dist/RFID Agent/`
 - All dependencies included
 - Ready for ZIP packaging or installer creation
+
+### Linux/macOS (`scripts/build.sh`)
+
+```bash
+# Make executable (one time)
+chmod +x scripts/build.sh
+
+# Run build
+./scripts/build.sh
+```
+
+Features:
+
+- Full error checking and validation
+- Automatic Python/Python3 detection
+- PyInstaller dependency verification
+- Build success confirmation
+
+### Simple Linux/macOS (`scripts/build-simple.sh`)
+
+```bash
+chmod +x scripts/build-simple.sh
+./scripts/build-simple.sh
+```
+
+- Minimal version without error checking
+- Quick builds for development
 
 ### Enhanced Windows Build (`scripts/build-release.bat`)
 
