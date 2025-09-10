@@ -1,0 +1,139 @@
+name: Create Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version (e.g., 1.2.3)"
+        required: true
+        type: string
+      prerelease:
+        description: "Is this a pre-release?"
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python-version: ["3.12"]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          if [ "${{ matrix.os }}" = "windows-latest" ]; then
+            pip install -r requirements.txt
+          else
+            pip install -r requirements-ci.txt
+          fi
+          pip install pyinstaller
+        shell: bash
+
+      - name: Build executable (Windows)
+        if: matrix.os == 'windows-latest'
+        run: |
+          pyinstaller --onefile --windowed --icon=icon.ico --name="RFID-Agent-v${{ inputs.version }}" main.py
+
+      - name: Build executable (Linux/macOS)
+        if: matrix.os != 'windows-latest'
+        run: |
+          pyinstaller --onefile --name="rfid-agent-v${{ inputs.version }}" main.py
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: executable-${{ matrix.os }}
+          path: |
+            dist/*
+
+  release:
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate version format
+        run: |
+          if ! echo "${{ inputs.version }}" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9]+)?$'; then
+            echo "❌ Invalid version format. Please use semantic versioning (e.g., 1.2.3 or 1.2.3-beta)"
+            exit 1
+          fi
+
+      - name: Check if tag exists
+        run: |
+          TAG_NAME="v${{ inputs.version }}"
+          if git rev-parse "$TAG_NAME" >/dev/null 2>&1; then
+            echo "❌ Tag $TAG_NAME already exists!"
+            exit 1
+          fi
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+
+      - name: Generate changelog
+        id: changelog
+        run: |
+          # Get commits since last tag
+          LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          if [ -n "$LAST_TAG" ]; then
+            COMMITS=$(git log --pretty=format:"- %s (%h)" ${LAST_TAG}..HEAD)
+          else
+            COMMITS=$(git log --pretty=format:"- %s (%h)" -10)
+          fi
+
+          # Save changelog to file
+          cat > changelog.md << EOF
+          ## Changes in v${{ inputs.version }}
+
+          ${COMMITS}
+
+          ## Downloads
+          - **Windows**: RFID-Agent-v${{ inputs.version }}.exe
+          - **Linux**: rfid-agent-v${{ inputs.version }} (Linux executable)
+          - **macOS**: rfid-agent-v${{ inputs.version }} (macOS executable)
+
+          ## Installation
+          Download the appropriate executable for your platform and run it directly.
+          No additional installation required.
+          EOF
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: v${{ inputs.version }}
+          name: Release v${{ inputs.version }}
+          body_path: changelog.md
+          draft: false
+          prerelease: ${{ inputs.prerelease }}
+          files: |
+            executable-ubuntu-latest/*
+            executable-windows-latest/*
+            executable-macos-latest/*
+          make_latest: ${{ !inputs.prerelease }}
+
+      - name: Success notification
+        run: |
+          echo "✅ Release v${{ inputs.version }} created successfully!"
+          echo "🔗 Check it out at: ${{ github.server_url }}/${{ github.repository }}/releases/tag/v${{ inputs.version }}"
