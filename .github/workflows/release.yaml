@@ -1,17 +1,25 @@
 name: Create Release
 
 on:
+  push:
+    tags:
+      - "v*.*.*" # Automatically trigger on version tags
   workflow_dispatch:
     inputs:
       version:
-        description: "Release version (e.g., 1.2.3)"
-        required: true
+        description: "Release version (e.g., 1.2.3) - leave empty to use latest tag"
+        required: false
         type: string
       prerelease:
         description: "Is this a pre-release?"
         required: false
         type: boolean
         default: false
+      use_latest_tag:
+        description: "Use latest tag for release (ignores version input)"
+        required: false
+        type: boolean
+        default: true
 
 permissions:
   contents: write
@@ -60,34 +68,73 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Validate version format
+      - name: Determine release version
+        id: version
         run: |
-          if ! echo "${{ inputs.version }}" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9]+)?$'; then
-            echo "❌ Invalid version format. Please use semantic versioning (e.g., 1.2.3 or 1.2.3-beta)"
-            exit 1
+          if [ "${{ github.event_name }}" = "push" ] && [ "${{ github.ref_type }}" = "tag" ]; then
+            # Automatic trigger from tag push
+            TAG_NAME="${{ github.ref_name }}"
+            VERSION=${TAG_NAME#v}
+            echo "Automatic trigger from tag push: $TAG_NAME"
+            echo "version=$VERSION" >> $GITHUB_OUTPUT
+            echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT
+          elif [ "${{ inputs.use_latest_tag }}" = "true" ] || [ -z "${{ inputs.version }}" ]; then
+            # Use latest tag
+            LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+            if [ -z "$LATEST_TAG" ]; then
+              echo "❌ No tags found in repository!"
+              exit 1
+            fi
+            # Remove 'v' prefix if present
+            VERSION=${LATEST_TAG#v}
+            echo "Using latest tag: $LATEST_TAG"
+            echo "version=$VERSION" >> $GITHUB_OUTPUT
+            echo "tag_name=$LATEST_TAG" >> $GITHUB_OUTPUT
+          else
+            # Use manual input
+            if [ -z "${{ inputs.version }}" ]; then
+              echo "❌ Version input is required when use_latest_tag is false"
+              exit 1
+            fi
+            # Validate version format
+            if ! echo "${{ inputs.version }}" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9]+)?$'; then
+              echo "❌ Invalid version format. Please use semantic versioning (e.g., 1.2.3 or 1.2.3-beta)"
+              exit 1
+            fi
+            VERSION="${{ inputs.version }}"
+            TAG_NAME="v$VERSION"
+            echo "Using manual version: $VERSION"
+            echo "version=$VERSION" >> $GITHUB_OUTPUT
+            echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT
           fi
 
-      - name: Check if tag exists
+      - name: Check if release already exists
         run: |
-          TAG_NAME="v${{ inputs.version }}"
-          if git rev-parse "$TAG_NAME" >/dev/null 2>&1; then
-            echo "❌ Tag $TAG_NAME already exists!"
+          TAG_NAME="${{ steps.version.outputs.tag_name }}"
+          # Check if release already exists
+          if gh release view "$TAG_NAME" >/dev/null 2>&1; then
+            echo "❌ Release $TAG_NAME already exists!"
+            echo "🔗 View existing release: ${{ github.server_url }}/${{ github.repository }}/releases/tag/$TAG_NAME"
             exit 1
           fi
+          echo "✅ Release $TAG_NAME does not exist, proceeding..."
+        env:
+          GH_TOKEN: ${{ github.token }}
 
       - name: Download all artifacts
         uses: actions/download-artifact@v4
 
       - name: Archive RFID Agent folder
         run: |
+          VERSION="${{ steps.version.outputs.version }}"
           # Check if the RFID Agent folder exists in the downloaded artifacts
           if [ -d "executable-windows/RFID Agent" ]; then
             echo "Found RFID Agent folder, creating ZIP archive..."
             cd "executable-windows"
             # Create ZIP archive for Windows compatibility
-            zip -r "../RFID-Agent-v${{ inputs.version }}-portable.zip" "RFID Agent"
+            zip -r "../RFID-Agent-v${VERSION}-portable.zip" "RFID Agent"
             cd ..
-            echo "Archive created: RFID-Agent-v${{ inputs.version }}-portable.zip"
+            echo "Archive created: RFID-Agent-v${VERSION}-portable.zip"
             ls -la *.zip
           else
             echo "RFID Agent folder not found in artifacts"
@@ -112,28 +159,50 @@ jobs:
       - name: Generate changelog
         id: changelog
         run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          TAG_NAME="${{ steps.version.outputs.tag_name }}"
+
           # Get commits since last tag
-          LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
-          if [ -n "$LAST_TAG" ]; then
-            COMMITS=$(git log --pretty=format:"- %s (%h)" ${LAST_TAG}..HEAD)
+          if [ "${{ github.event_name }}" = "push" ] && [ "${{ github.ref_type }}" = "tag" ]; then
+            # For automatic tag triggers, get commits since previous tag
+            PREVIOUS_TAG=$(git describe --tags --abbrev=0 "${TAG_NAME}^" 2>/dev/null || echo "")
+            if [ -n "$PREVIOUS_TAG" ]; then
+              COMMITS=$(git log --pretty=format:"- %s (%h)" ${PREVIOUS_TAG}..${TAG_NAME})
+            else
+              COMMITS=$(git log --pretty=format:"- %s (%h)" --max-count=10 ${TAG_NAME})
+            fi
+          elif [ "${{ inputs.use_latest_tag }}" = "true" ] || [ -z "${{ inputs.version }}" ]; then
+            # When using latest tag, get commits since the previous tag
+            PREVIOUS_TAG=$(git describe --tags --abbrev=0 "${TAG_NAME}^" 2>/dev/null || echo "")
+            if [ -n "$PREVIOUS_TAG" ]; then
+              COMMITS=$(git log --pretty=format:"- %s (%h)" ${PREVIOUS_TAG}..${TAG_NAME})
+            else
+              COMMITS=$(git log --pretty=format:"- %s (%h)" --max-count=10 ${TAG_NAME})
+            fi
           else
-            COMMITS=$(git log --pretty=format:"- %s (%h)" -10)
+            # When using manual version, get commits since last existing tag
+            LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+            if [ -n "$LAST_TAG" ]; then
+              COMMITS=$(git log --pretty=format:"- %s (%h)" ${LAST_TAG}..HEAD)
+            else
+              COMMITS=$(git log --pretty=format:"- %s (%h)" -10)
+            fi
           fi
 
           # Save changelog to file
           cat > changelog.md << EOF
-          ## Changes in v${{ inputs.version }}
+          ## Changes in v${VERSION}
 
           ${COMMITS}
 
           ## Downloads
-          - **Windows Portable**: RFID-Agent-v${{ inputs.version }}-portable.zip (Complete application folder)
+          - **Windows Portable**: RFID-Agent-v${VERSION}-portable.zip (Complete application folder)
           - **Windows Installer**: Available in installation assets (if included)
 
           ## Installation
 
           ### Option 1: Portable Version (Recommended)
-          1. Download \`RFID-Agent-v${{ inputs.version }}-portable.zip\`
+          1. Download \`RFID-Agent-v${VERSION}-portable.zip\`
           2. Extract the ZIP file to your desired location
           3. Run \`RFID Agent.exe\` from the extracted folder
 
@@ -150,18 +219,20 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tag_name: v${{ inputs.version }}
-          name: Release v${{ inputs.version }}
+          tag_name: ${{ steps.version.outputs.tag_name }}
+          name: Release v${{ steps.version.outputs.version }}
           body_path: changelog.md
           draft: false
           prerelease: ${{ inputs.prerelease }}
           files: |
             executable-windows/*
             release-assets/*
-            RFID-Agent-v${{ inputs.version }}-portable.zip
+            RFID-Agent-v${{ steps.version.outputs.version }}-portable.zip
           make_latest: ${{ !inputs.prerelease }}
 
       - name: Success notification
         run: |
-          echo "✅ Release v${{ inputs.version }} created successfully!"
-          echo "🔗 Check it out at: ${{ github.server_url }}/${{ github.repository }}/releases/tag/v${{ inputs.version }}"
+          VERSION="${{ steps.version.outputs.version }}"
+          TAG_NAME="${{ steps.version.outputs.tag_name }}"
+          echo "✅ Release v${VERSION} created successfully!"
+          echo "🔗 Check it out at: ${{ github.server_url }}/${{ github.repository }}/releases/tag/${TAG_NAME}"
