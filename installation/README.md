@@ -90,7 +90,6 @@ A typical release will include:
 
 ```
 Release v1.2.3 Assets:
-├── RFID-Agent-v1.2.3-portable.zip          # Auto-generated portable
 ├── rfid-agent-1.0.0-install-windows-x64.exe # Your custom installer
 ├── rfid-agent-1.0.0-portable.rar           # Legacy portable (reference)
 └── [other files from this folder]          # Additional installers
