@@ -227,7 +227,7 @@ jobs:
           files: |
             executable-windows/*
             release-assets/*
-            RFID-Agent-v${{ steps.version.outputs.version }}-portable.zip
+            installation/*
           make_latest: ${{ !inputs.prerelease }}
 
       - name: Success notification
