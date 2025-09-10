@@ -35,12 +35,36 @@ For better control over releases, use the manual "Create Release" workflow:
 
 ### Steps:
 
-1. Go to **Actions** tab in GitHub
-2. Click **Create Release** workflow
-3. Click **Run workflow**
-4. Enter the version number (e.g., `1.2.3`)
-5. Optionally mark as pre-release
-6. Click **Run workflow**
+1. **Build installation packages locally** (optional):
+
+   ```bash
+   # Windows (builds directory structure + creates ZIP)
+   scripts\build-release.bat 1.2.3
+
+   # Or just use the simple build script
+   scripts\build.bat
+   ```
+
+2. Go to **Actions** tab in GitHub
+3. Click **Create Release** workflow
+4. Click **Run workflow**
+5. Enter the version number (e.g., `1.2.3`)
+6. Optionally mark as pre-release
+7. Click **Run workflow**
+
+### What gets included automatically:
+
+- ✅ **Windows Executable**: Built from source using PyInstaller (directory structure)
+- ✅ **Portable ZIP Archive**: Complete "RFID Agent" folder packaged for easy download
+- ✅ **Installation files**: Any files in the `installation/` folder
+- ✅ **Professional installer**: Pre-built installers (if available)
+
+The workflow automatically:
+
+- Builds the application using your `build.bat` script (Windows only)
+- Creates a portable ZIP archive of the complete application folder
+- Includes any pre-built installers from the installation folder
+- Generates a detailed changelog with download options
 
 ### Version Format
 
@@ -55,10 +79,70 @@ Use semantic versioning:
 
 1. ✅ Validates version format
 2. ✅ Checks if tag already exists
-3. ✅ Builds executables with version in filename
-4. ✅ Generates changelog from commits
-5. ✅ Creates GitHub release with assets
-6. ✅ Makes it the latest release (unless pre-release)
+3. ✅ Builds Windows executable using `scripts/build.bat`
+4. ✅ Creates portable ZIP archive of the "RFID Agent" folder
+5. ✅ Copies files from `installation/` folder as release assets
+6. ✅ Generates changelog from commits
+7. ✅ Creates GitHub release with all assets
+8. ✅ Makes it the latest release (unless pre-release)
+
+## Installation Folder Structure
+
+Place your installation files in the `installation/` folder to include them in releases:
+
+```
+installation/
+├── rfid-agent-1.0.0-install-windows-x64.exe  # Windows installer
+├── rfid-agent-1.0.0-portable.rar             # Portable version (legacy)
+├── README.md                                  # Installation documentation
+└── [other installer files]                   # Additional installers
+```
+
+**Note**: The workflow creates a fresh portable ZIP from the built application,
+so you don't need to manually update portable packages.
+
+- `rfid-agent-installer.exe` → `rfid-agent-v1.2.3-installer.exe`
+- `rfid-agent-portable.zip` → `rfid-agent-v1.2.3-portable.zip`
+
+## Build Scripts
+
+Use the enhanced build scripts to create installation packages:
+
+### Windows (`scripts/build.bat`)
+
+```bash
+scripts\build.bat
+```
+
+Creates:
+
+- Complete application folder in `dist/RFID Agent/`
+- All dependencies included
+- Ready for ZIP packaging or installer creation
+
+### Enhanced Windows Build (`scripts/build-release.bat`)
+
+```bash
+scripts\build-release.bat 1.2.3
+```
+
+Creates:
+
+- Executable with PyInstaller
+- Portable ZIP package
+- Windows installer (if NSIS is installed)
+
+**Note**: The GitHub Actions workflow uses the simple `build.bat` and creates
+the portable ZIP automatically, so manual ZIP creation is usually not needed.
+
+## Current Workflow Focus
+
+The project now focuses on **Windows-only builds** for efficiency:
+
+- ✅ **Faster CI/CD**: Only builds on Windows instead of 3 platforms
+- ✅ **Uses your build script**: Leverages tested `scripts/build.bat`
+- ✅ **Directory structure**: Works well with installer tools like Inno Setup
+- ✅ **Automatic portable package**: Creates ZIP archive automatically
 
 ## Troubleshooting
 
