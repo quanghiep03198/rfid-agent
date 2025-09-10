@@ -182,3 +182,9 @@ data/
 
 # Installer
 .installer/
+
+# Private files
+private/
+
+# App configuration file
+.config
