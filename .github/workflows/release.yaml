@@ -210,7 +210,7 @@ jobs:
           Download and run the installer from the release assets.
 
           ## System Requirements
-          - Windows 10 or later
+          - Windows 10, 11 or later
           - No additional dependencies required
           EOF
 
