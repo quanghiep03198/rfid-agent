@@ -1,3 +1,5 @@
+import signal
+import sys
 from base64 import b64encode
 from gzip import compress
 from json import JSONDecodeError, dumps, loads
@@ -112,6 +114,15 @@ class Application:
                 "============================== RFID Agent - version 1.0.0 =============================="
             )
             self.__init_mqtt_gateway()
+
+            def signal_handler(sig, frame):
+                logger.info("Console window closing detected...")
+                self.__handle_close_reader_connection()
+                sys.exit(0)
+
+            signal.signal(signal.SIGINT, signal_handler)
+            signal.signal(signal.SIGTERM, signal_handler)
+
         except KeyboardInterrupt:
             logger.info("Shutting down the application...")
             self.__handle_close_reader_connection()
