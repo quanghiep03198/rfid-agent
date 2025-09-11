@@ -1,6 +1,28 @@
 import logging
 import os
 
+
+class CustomFormatter(logging.Formatter):
+    # Define colors for each level
+    __COLORS = {
+        "DEBUG": "\033[94m",  # Blue color
+        "INFO": "\033[92m",  # Green color
+        "WARNING": "\033[93m",  # Yellow color
+        "ERROR": "\033[91m",  # Red color
+        "CRITICAL": "\033[91m",  # Red color
+    }
+    __RESET = "\033[0m"  # Reset color
+
+    def format(self, record):
+        # Make a copy of the record to avoid modifying the original
+        record_copy = logging.makeLogRecord(record.__dict__)
+        levelname = record_copy.levelname
+
+        record_copy.levelname = f"{self.__COLORS[levelname]}{levelname}{self.__RESET}"
+
+        return super().format(record_copy)
+
+
 # Create logs directory if it doesn't exist
 log_dir = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "logs"
@@ -17,29 +39,6 @@ logger.setLevel(logging.DEBUG)  #
 # Create console handler to display logs on console
 console_handler = logging.StreamHandler()
 console_handler.setLevel(logging.DEBUG)  # Display all logs from DEBUG level and above
-
-
-class CustomFormatter(logging.Formatter):
-    # Define colors for each level
-    COLORS = {
-        "DEBUG": "\033[94m",  # Blue color
-        "INFO": "\033[92m",  # Green color
-        "WARNING": "\033[93m",  # Yellow color
-        "ERROR": "\033[91m",  # Red color
-        "CRITICAL": "\033[95m",  # Purple color
-    }
-    RESET = "\033[0m"  # Reset color
-
-    def format(self, record):
-        levelname = record.levelname
-        # Check if the current handler is a console handler
-        current_handler = getattr(record, "handler", None)
-        if isinstance(current_handler, logging.StreamHandler) and not isinstance(
-            current_handler, logging.FileHandler
-        ):
-            record.levelname = f"{self.COLORS[levelname]}{levelname}{self.RESET}"
-            # if levelname in self.COLORS:
-        return super().format(record)
 
 
 console_handler.setFormatter(
@@ -60,7 +59,8 @@ file_handler.setLevel(
 )  # Only write logs from ERROR level and above to file
 file_handler.setFormatter(
     logging.Formatter(
-        "%(asctime)s - [%(levelname)s] - %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
+        fmt="%(asctime)s - [%(levelname)s] - %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
     )
 )
 
