@@ -114,7 +114,26 @@ class Application:
             self.__init_mqtt_gateway()
         except KeyboardInterrupt:
             logger.info("Shutting down the application...")
-            self.__handle_close_reader_connection()
+            self.shutdown()
+
+    def shutdown(self) -> None:
+        """
+        Gracefully shut down the application, ensuring all connections are closed.
+        """
+        if self.mqtt_gateway is None:
+            return
+        self.mqtt_gateway.publish(
+            topic=PublishTopics.REPLY_SIGNAL.value,
+            payload=dumps(
+                {
+                    "isMQTTConnectionReady": False,
+                    "isReaderConnectionReady": False,
+                    "isReaderPlaying": False,
+                }
+            ).encode(),
+        )
+        self.mqtt_gateway.loop_stop()
+        self.mqtt_gateway.disconnect()
 
     # region MQTT handlers
     def __init_mqtt_gateway(self) -> None:
@@ -141,10 +160,7 @@ class Application:
                 ).encode(),
             )
         except Exception as e:
-            logger.error(f"Failed to initialize MQTT client: {e}")
-        finally:
-            self.mqtt_gateway.loop_stop()
-            self.mqtt_gateway.disconnect()
+            logger.critical(f"Failed to initialize MQTT client: {e}")
 
     def __on_mqtt_gateway_connect(
         self,
