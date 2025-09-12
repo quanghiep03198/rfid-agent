@@ -111,6 +111,7 @@ class Application:
             print(
                 "============================== RFID Agent - version 1.0.0 =============================="
             )
+            self.__restart_reader_connection()
             self.__init_mqtt_gateway()
         except KeyboardInterrupt:
             logger.info("Shutting down the application...")
@@ -134,6 +135,7 @@ class Application:
         )
         self.mqtt_gateway.loop_stop()
         self.mqtt_gateway.disconnect()
+        self.__handle_close_reader_connection()
 
     # region MQTT handlers
     def __init_mqtt_gateway(self) -> None:
@@ -177,7 +179,6 @@ class Application:
         client.subscribe(SubscribeTopics.REQUEST_DATA.value)
         client.subscribe(SubscribeTopics.REQUEST_SETTINGS.value)
         self.__publish_connection_status()
-        # self.__handle_get_reader_settings()
 
     def __on_mqtt_gateway_disconnect(
         self,
@@ -257,6 +258,8 @@ class Application:
         """
         Publish the current connection status to the MQTT broker.
         """
+        if not hasattr(self, "mqtt_gateway") or self.mqtt_gateway is None:
+            return
         return self.mqtt_gateway.publish(
             topic=PublishTopics.REPLY_SIGNAL.value,
             payload=dumps(
@@ -457,16 +460,12 @@ class Application:
             self.reader_instance.callTcpDisconnect
             self.reader_instance = None
             self.is_reading = False
-        self.mqtt_gateway.publish(
-            topic=PublishTopics.REPLY_SIGNAL.value,
-            payload=dumps(
-                {
-                    "isMQTTConnectionReady": self.mqtt_gateway.is_connected(),
-                    "isReaderConnectionReady": False,
-                    "isReaderPlaying": False,
-                }
-            ).encode(),
-        )
+        self.__publish_connection_status()
+
+    def __restart_reader_connection(self):
+        self.__handle_open_reader_connection()
+        self.__handle_stop_reading()
+        self.__handle_close_reader_connection()
 
     def __handle_start_reading(self):
         self.is_reading = True
