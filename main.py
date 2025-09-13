@@ -463,9 +463,16 @@ class Application:
         self.__publish_connection_status()
 
     def __restart_reader_connection(self):
-        self.__handle_open_reader_connection()
-        self.__handle_stop_reading()
-        self.__handle_close_reader_connection()
+        if self.reader_instance is None:
+            self.reader_instance = GClient()
+
+        self.reader_instance.openTcp((self.reader_ip, int(self.reader_port)))
+        self.reader_instance.sendSynMsg(MsgBaseStop())
+        self.reader_instance.close()
+        self.reader_instance.callTcpDisconnect
+        self.reader_instance = None
+
+        logger.info("Gracefully restarted the reader connection.")
 
     def __handle_start_reading(self):
         self.is_reading = True
