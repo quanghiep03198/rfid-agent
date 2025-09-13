@@ -188,3 +188,5 @@ private/
 
 # App configuration file
 .config
+
+.inno/
