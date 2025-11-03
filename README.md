@@ -7,7 +7,7 @@
 - **Programming Language**: Python
 - **Dependencies**:
   - `paho-mqtt` for MQTT communication
-  - `uhfReaderApi` for lightweight database management
+  - `uhfReaderApi` for RFID reader communication
 
 ## Key Features
 
