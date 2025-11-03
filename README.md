@@ -1,6 +1,6 @@
 ## Overview
 
-`RFID Agent` is an IoT application designed to connect web and native applications with the RFID device model SF5004. This project leverages Mosquitto MQTT for seamless communication between the RFID device and client applications.
+`RFID Agent` is an IoT application designed to connect web and native applications with the RFID device model SF5004, SGI0901, ... This project leverages Mosquitto MQTT for seamless communication between the RFID device and client applications.
 
 ## Technologies Used
 
