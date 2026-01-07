@@ -31,7 +31,7 @@
 
 **New Features Documented:**
 
-- Automatic `RFID-Agent-v{version}-portable.zip` creation
+- Automatic `rfid-agent-v{version}-windows-x64.zip` creation
 - No file renaming required
 - Professional release structure
 - Integration with custom installers

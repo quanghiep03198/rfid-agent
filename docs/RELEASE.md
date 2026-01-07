@@ -93,7 +93,7 @@ Place your installation files in the `installation/` folder to include them in r
 ```
 installation/
 ├── rfid-agent-1.0.0-install-windows-x64.exe  # Windows installer
-├── rfid-agent-1.0.0-portable.rar             # Portable version (legacy)
+├── rfid-agent-1.0.0-windows-x64.rar             # Portable version (legacy)
 ├── README.md                                  # Installation documentation
 └── [other installer files]                   # Additional installers
 ```
@@ -102,7 +102,7 @@ installation/
 so you don't need to manually update portable packages.
 
 - `rfid-agent-installer.exe` → `rfid-agent-v1.2.3-installer.exe`
-- `rfid-agent-portable.zip` → `rfid-agent-v1.2.3-portable.zip`
+- `rfid-agent-windows-x64.zip` → `rfid-agent-v1.2.3-windows-x64.zip`
 
 ## Build Scripts
 
