@@ -64,7 +64,7 @@ All build scripts create the same output structure:
 dist/
 └── RFID Agent/
     ├── RFID Agent          # Executable (Linux/macOS)
-    ├── RFID Agent.exe      # Executable (Windows)
+    ├── rfid-agent.exe      # Executable (Windows)
     ├── icon.ico            # Application icon
     └── [dependencies]      # PyInstaller bundled files
 ```
