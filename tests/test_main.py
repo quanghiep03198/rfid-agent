@@ -161,8 +161,7 @@ class TestApplication:
             app, "_Application__handle_close_reader_connection"
         ) as mock_close:
             app.shutdown()
-            # Reader connection should always be closed during shutdown,
-            # even if mqtt_gateway is not available.
+            # Latest shutdown() always closes reader connection regardless of mqtt_gateway.
             mock_close.assert_called_once()
 
     @patch("main.mqtt.Client")
