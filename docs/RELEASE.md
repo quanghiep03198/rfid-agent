@@ -56,7 +56,7 @@ For better control over releases, use the manual "Create Release" workflow:
 
 - ✅ **Windows Executable**: Built from source using PyInstaller (directory structure)
 - ✅ **Portable ZIP Archive**: Complete "RFID Agent" folder packaged for easy download
-- ✅ **Installation files**: Any files in the `installation/` folder
+- ✅ **Installation files**: Any files in the `release/` folder
 - ✅ **Professional installer**: Pre-built installers (if available)
 
 The workflow automatically:
@@ -81,17 +81,17 @@ Use semantic versioning:
 2. ✅ Checks if tag already exists
 3. ✅ Builds Windows executable using `scripts/build.bat`
 4. ✅ Creates portable ZIP archive of the "RFID Agent" folder
-5. ✅ Copies files from `installation/` folder as release assets
+5. ✅ Copies files from `release/` folder as release assets
 6. ✅ Generates changelog from commits
 7. ✅ Creates GitHub release with all assets
 8. ✅ Makes it the latest release (unless pre-release)
 
 ## Installation Folder Structure
 
-Place your installation files in the `installation/` folder to include them in releases:
+Place your installation files in the `release/` folder to include them in releases:
 
 ```
-installation/
+release/
 ├── rfid-agent-1.0.0-install-windows-x64.exe  # Windows installer
 ├── rfid-agent-1.0.0-windows-x64.rar             # Portable version (legacy)
 ├── README.md                                  # Installation documentation

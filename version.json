@@ -1,0 +1,15 @@
+{
+  "version": "v1.1.0",
+  "build_type": "release",
+  "build_date": "2026-01-07T15:19:08.967933",
+  "build_timestamp": 1767773948,
+  "git": {
+    "commit_hash": "5e8dd33",
+    "commit_date": "2025-11-03 09:07:16 +0700",
+    "branch": "main"
+  },
+  "platform": {
+    "system": "nt",
+    "python_version": "3.13.1 (tags/v3.13.1:0671451, Dec  3 2024, 19:06:28) [MSC v.1942 64 bit (AMD64)]"
+  }
+}

@@ -21,6 +21,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v4
@@ -139,9 +141,17 @@ jobs:
           pip install -r requirements.txt
           pip install pyinstaller
 
+      - name: Get latest git tag
+        id: get_version
+        run: |
+          git fetch --tags
+          $tag = git describe --tags --abbrev=0
+          if (-not $tag) { Write-Error "No git tags found"; exit 1 }
+          echo "version=$tag" >> $env:GITHUB_OUTPUT
+
       - name: Build executable using build script
         run: |
-          scripts\build.bat
+          python scripts/build.py --version ${{ steps.get_version.outputs.version }} --type release
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
@@ -152,8 +162,8 @@ jobs:
 
   release:
     runs-on: ubuntu-latest
-    needs: [test, security-scan, build]
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push' && contains(github.event.head_commit.message, 'release:')
+    needs: [build]
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
 
     steps:
       - name: Checkout repository
@@ -161,69 +171,230 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Get version from commit message or generate one
-        id: get_version
+      - name: Set release version
+        id: version
         run: |
-          # Try to extract version from commit message (e.g., "release: v1.2.3")
-          VERSION=$(echo "${{ github.event.head_commit.message }}" | grep -oP 'release:\s*v?\K[\d\.]+' || echo "")
+          # Use version from build job
+          VERSION="${{ needs.build.outputs.version }}"
+          echo "Using version from build: $VERSION"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "tag_name=$VERSION" >> $GITHUB_OUTPUT
 
-          if [ -z "$VERSION" ]; then
-            # Fallback: generate version based on date and run number
-            DATE=$(date +'%Y.%m.%d')
-            VERSION="${DATE}.${GITHUB_RUN_NUMBER}"
-          fi
-
-          echo "version=${VERSION}" >> $GITHUB_OUTPUT
-          echo "tag_name=v${VERSION}" >> $GITHUB_OUTPUT
-
-      - name: Check if tag exists
-        id: check_tag
+      - name: Check if release already exists
         run: |
-          TAG_NAME="${{ steps.get_version.outputs.tag_name }}"
-          if git rev-parse "$TAG_NAME" >/dev/null 2>&1; then
-            echo "Tag $TAG_NAME already exists!"
-            echo "exists=true" >> $GITHUB_OUTPUT
+          TAG_NAME="${{ steps.version.outputs.tag_name }}"
+          OWNER_REPO="${{ github.repository }}"
+          API_URL="https://api.github.com/repos/${OWNER_REPO}/releases/tags/${TAG_NAME}"
+
+          echo "Checking release via REST API: $API_URL"
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "$API_URL")
+
+          if [ "$STATUS" = "200" ]; then
+            echo "Release $TAG_NAME already exists!"
+            echo "View existing release: ${{ github.server_url }}/${{ github.repository }}/releases/tag/$TAG_NAME"
+            exit 1
+          elif [ "$STATUS" = "404" ]; then
+            echo "Release $TAG_NAME does not exist, proceeding..."
           else
-            echo "Tag $TAG_NAME does not exist, proceeding with release"
-            echo "exists=false" >> $GITHUB_OUTPUT
+            echo "Unexpected status: $STATUS while checking release. Dumping response for diagnostics:"
+            curl -s -H "Authorization: Bearer $GITHUB_TOKEN" -H "Accept: application/vnd.github+json" "$API_URL"
+            exit 1
           fi
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Download all artifacts
-        if: steps.check_tag.outputs.exists == 'false'
         uses: actions/download-artifact@v4
 
+      - name: Debug artifacts structure
+        run: |
+          echo "=== Debugging artifact structure ==="
+          echo "Executable-windows directory structure:"
+          ls -la executable-windows/ || echo "executable-windows directory not found"
+          echo -e "\n Looking for dist folder:"
+          ls -la executable-windows/dist/ 2>/dev/null || echo "dist folder not found"
+          echo -e "\n Looking for rfid-agent:"
+          ls -la "executable-windows/dist/rfid-agent/" 2>/dev/null || echo "rfid-agent folder not found"
+          echo -e "\n Searching for .exe files:"
+          find executable-windows/ -name "*.exe" 2>/dev/null | head -3 || echo "No .exe files found"
+          echo -e "\n Installer artifacts:"
+          ls -la installer-windows/ || echo "installer-windows directory not found"
+
+      - name: Archive rfid-agent folder
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"  # e.g., v1.2.3
+          ZIP_NAME="rfid-agent-${VERSION}-windows-x64.zip"
+
+          # The expected path should be: executable-windows/dist/rfid-agent/
+          EXPECTED_PATH="executable-windows/dist/rfid-agent"
+
+          if [ -d "$EXPECTED_PATH" ]; then
+            echo "Found rfid-agent folder at expected location: $EXPECTED_PATH"
+            
+            # Verify the executable exists
+            if [ -f "$EXPECTED_PATH/rfid-agent.exe" ]; then
+              echo "rfid-agent.exe confirmed"
+              
+              # Create ZIP archive
+              cd "executable-windows/dist"
+              echo "Creating ZIP archive from 'rfid-agent' folder..."
+              zip -r "../../${ZIP_NAME}" "rfid-agent"
+              cd ../..
+              
+              echo "Archive created: ${ZIP_NAME}"
+              ls -la ${ZIP_NAME}
+              
+              # Verify zip contents (show first 10 files)
+              echo -e "\n ZIP file contents (first 10 files):"
+              unzip -l "${ZIP_NAME}" | head -15
+              
+            else
+              echo "rfid-agent.exe not found in $EXPECTED_PATH"
+              exit 1
+            fi
+            
+          else
+            echo "Expected folder not found: $EXPECTED_PATH"
+            echo "Let's search for the executable..."
+            
+            # Search for the exe file anywhere
+            EXE_PATH=$(find executable-windows/ -name "rfid-agent.exe" 2>/dev/null | head -1)
+            
+            if [ -n "$EXE_PATH" ]; then
+              echo "Found rfid-agent.exe at: $EXE_PATH"
+              
+              # Get the directory containing the exe
+              EXE_DIR=$(dirname "$EXE_PATH")
+              echo "Executable directory: $EXE_DIR"
+              
+              # Navigate to parent of EXE_DIR and create zip
+              cd "$(dirname "$EXE_DIR")"
+              FOLDER_NAME=$(basename "$EXE_DIR")
+              echo "Creating ZIP from folder: $FOLDER_NAME"
+              zip -r "../${ZIP_NAME}" "$FOLDER_NAME"
+              cd ..
+              
+              echo "Archive created: ${ZIP_NAME}"
+              ls -la ${ZIP_NAME}
+              
+            else
+              echo "rfid-agent.exe not found anywhere in artifacts!"
+              echo "Available files:"
+              find executable-windows/ -name "*.exe" 2>/dev/null | head -5 || echo "No .exe files found"
+              echo -e "\n Directory structure:"
+              find executable-windows/ -type d | head -10 || echo "No directories found"
+              exit 1
+            fi
+          fi
+
+      - name: Prepare installation assets
+        run: |
+          VERSION_NUMBER="${{ steps.version.outputs.version }}"
+          VERSION_NUMBER=${VERSION_NUMBER#v}  # Remove 'v' prefix for file naming
+
+          # Create a directory for release assets
+          mkdir -p release-assets
+          touch release-assets/.keep
+
+          # Copy installation files if they exist
+          if [ -d "release" ]; then
+            echo "Found installation folder, copying files..."
+            cp -r release/rfid-agent-v${VERSION_NUMBER}-windows-installer-x64.exe release-assets/ 2>/dev/null || true
+            ls -la release-assets/
+          else
+            echo "No installation folder found"
+          fi
+
+      - name: Generate changelog
+        id: changelog
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          TAG_NAME="${{ steps.version.outputs.tag_name }}"
+
+          # Get commits since last tag
+          if [ "${{ github.event_name }}" = "push" ] && [ "${{ github.ref_type }}" = "tag" ]; then
+            # For automatic tag triggers, get commits since previous tag
+            PREVIOUS_TAG=$(git describe --tags --abbrev=0 "${TAG_NAME}^" 2>/dev/null || echo "")
+            if [ -n "$PREVIOUS_TAG" ]; then
+              COMMITS=$(git log --pretty=format:"- %s (%h)" ${PREVIOUS_TAG}..${TAG_NAME})
+            else
+              COMMITS=$(git log --pretty=format:"- %s (%h)" --max-count=10 ${TAG_NAME})
+            fi
+          elif [ "${{ inputs.use_latest_tag }}" = "true" ] || [ -z "${{ inputs.version }}" ]; then
+            # When using latest tag, get commits since the previous tag
+            PREVIOUS_TAG=$(git describe --tags --abbrev=0 "${TAG_NAME}^" 2>/dev/null || echo "")
+            if [ -n "$PREVIOUS_TAG" ]; then
+              COMMITS=$(git log --pretty=format:"- %s (%h)" ${PREVIOUS_TAG}..${TAG_NAME})
+            else
+              COMMITS=$(git log --pretty=format:"- %s (%h)" --max-count=10 ${TAG_NAME})
+            fi
+          else
+            # When using manual version, get commits since last existing tag
+            LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+            if [ -n "$LAST_TAG" ]; then
+              COMMITS=$(git log --pretty=format:"- %s (%h)" ${LAST_TAG}..HEAD)
+            else
+              COMMITS=$(git log --pretty=format:"- %s (%h)" -10)
+            fi
+          fi
+
+          # Save changelog to file  
+          VERSION_TAG="${{ steps.version.outputs.version }}"
+          VERSION_NUMBER=${VERSION_TAG#v}  # Remove 'v' prefix for messaging
+
+          cat > changelog.md << EOF
+          ## Changes in ${VERSION_TAG}
+
+          ${COMMITS}
+
+          ## Downloads
+          - **Portable**: rfid-agent-${VERSION_TAG}-windows-x64.zip (Complete application folder)
+          - **Windows Installer**: rfid-agent-${VERSION_TAG}-windows-installer-x64.exe (Recommended for most users)
+
+          ## Installation
+
+          ### Option 1: Portable Version (Recommended)
+          1. Download \`rfid-agent-v${VERSION_NUMBER}-windows-x64.zip\`
+          2. Extract the ZIP file to your desired location
+          3. Run \`rfid-agent.exe\` from the extracted folder
+
+          ### Option 2: Windows Installer (Recommended)
+          1. Download \`rfid-agent-v${VERSION_NUMBER}-windows-installer-x64.exe\`
+          2. Run the installer as administrator
+          3. Follow the installation wizard
+          4. Launch from Start Menu or Desktop shortcut
+
+          ## System Requirements
+          - Windows 10, 11 or later
+          - No additional dependencies required
+          EOF
+
       - name: Create Release
-        if: steps.check_tag.outputs.exists == 'false'
-        id: create_release
         uses: softprops/action-gh-release@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tag_name: ${{ steps.get_version.outputs.tag_name }}
-          name: Release ${{ steps.get_version.outputs.tag_name }}
-          body: |
-            Automated release from commit ${{ github.sha }}
-
-            ## What's Changed
-            - Automated build and test pipeline
-            - Cross-platform executables
-            - Security scans passed
-
-            ## Test Coverage
-            Check the artifacts for detailed coverage reports.
-
-            ## Downloads
-            - **Windows**: rfid-agent.exe
+          tag_name: ${{ steps.version.outputs.tag_name }}
+          name: ${{ steps.version.outputs.version }}
+          body_path: changelog.md
           draft: false
-          prerelease: false
+          prerelease: ${{ inputs.prerelease }}
           files: |
             executable-windows/*
-          make_latest: true
+            release-assets/*
+            release/rfid-agent-${{ steps.version.outputs.version }}-windows-installer-x64.exe
+            rfid-agent-${{ steps.version.outputs.version }}-windows-x64.zip
+          make_latest: ${{ !inputs.prerelease }}
 
-      - name: Release skipped
-        if: steps.check_tag.outputs.exists == 'true'
+      - name: Success notification
         run: |
-          echo "⚠️ Release skipped: Tag ${{ steps.get_version.outputs.tag_name }} already exists"
+          VERSION="${{ steps.version.outputs.version }}"
+          TAG_NAME="${{ steps.version.outputs.tag_name }}"
+          echo "Release v${VERSION} created successfully!"
+          echo "Check it out at: ${{ github.server_url }}/${{ github.repository }}/releases/tag/${TAG_NAME}"
 
   notify:
     runs-on: ubuntu-latest

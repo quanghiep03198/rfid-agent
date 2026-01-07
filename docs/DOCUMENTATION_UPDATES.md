@@ -19,7 +19,7 @@
 - Windows-focused development workflow
 - Integration with existing installation files
 
-### 2. `installation/README.md`
+### 2. `release/README.md`
 
 **Key Changes:**
 
