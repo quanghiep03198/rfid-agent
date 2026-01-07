@@ -226,20 +226,20 @@ jobs:
 
       - name: Prepare installation assets
         run: |
-          VERSION_NUMBER="${{ steps.version.outputs.version }}"
-          VERSION_NUMBER=${VERSION_NUMBER#v}  # Remove 'v' prefix for file naming
+          VERSION="${{ steps.version.outputs.version }}"
+          INSTALLER_FILENAME="rfid-agent-${VERSION}-windows-installer-x64.exe"
 
           # Create a directory for release assets
           mkdir -p release-assets
-          touch release-assets/.keep
 
-          # Copy installation files if they exist
-          if [ -d "release" ]; then
-            echo "Found installation folder, copying files..."
-            cp -r release/rfid-agent-v${VERSION_NUMBER}-windows-installer-x64.exe release-assets/ 2>/dev/null || true
+          # Check and copy installer from release/ if it exists
+          if [ -f "release/${INSTALLER_FILENAME}" ]; then
+            echo "Found installer: release/${INSTALLER_FILENAME}"
+            cp "release/${INSTALLER_FILENAME}" release-assets/
+            echo "Installer copied to release-assets/"
             ls -la release-assets/
           else
-            echo "No installation folder found"
+            echo "Installer not found at release/${INSTALLER_FILENAME}, skipping..."
           fi
 
       - name: Generate changelog
@@ -318,7 +318,7 @@ jobs:
           prerelease: ${{ inputs.prerelease }}
           files: |
             rfid-agent-${{ steps.version.outputs.version }}-windows-x64.zip
-            release-assets/*
+            release-assets/*.exe
           make_latest: ${{ !inputs.prerelease }}
 
       - name: Success notification
