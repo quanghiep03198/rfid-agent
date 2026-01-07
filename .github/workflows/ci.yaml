@@ -213,7 +213,7 @@ jobs:
             Check the artifacts for detailed coverage reports.
 
             ## Downloads
-            - **Windows**: RFID Agent.exe
+            - **Windows**: rfid-agent.exe
           draft: false
           prerelease: false
           files: |
