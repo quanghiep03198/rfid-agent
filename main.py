@@ -1,5 +1,6 @@
-from base64 import b64encode
-from gzip import compress
+import atexit
+import signal
+import sys
 from json import JSONDecodeError, dumps, loads
 from threading import Thread
 
@@ -102,6 +103,50 @@ class Application:
             section=ConfigSection.READER.value, key="uhf_reader_power"
         )
 
+        # Setup signal handlers for graceful shutdown
+        self.__setup_signal_handlers()
+        # Register cleanup function to run on exit
+        atexit.register(self.__cleanup_on_exit)
+
+    def __setup_signal_handlers(self) -> None:
+        """
+        Setup signal handlers to catch console close events and interruptions.
+        """
+        signal.signal(signal.SIGINT, self.__signal_handler)  # Ctrl+C
+        signal.signal(signal.SIGTERM, self.__signal_handler)  # Termination signal
+
+        # On Windows, also handle SIGBREAK (Ctrl+Break) and console close
+        if sys.platform == "win32":
+            signal.signal(signal.SIGBREAK, self.__signal_handler)
+
+    def __signal_handler(self, signum, frame):
+        """
+        Handle signals for graceful shutdown.
+        """
+        logger.info(f"Received signal {signum}. Initiating graceful shutdown...")
+        print(f"\nReceived termination signal ({signum}). Shutting down gracefully...")
+        self.shutdown()
+        sys.exit(0)
+
+    def __cleanup_on_exit(self):
+        """
+        Cleanup function that runs when the program exits.
+        """
+        logger.info("Application is exiting - performing final cleanup...")
+        if hasattr(self, "mqtt_gateway") and self.mqtt_gateway is not None:
+            try:
+                self.mqtt_gateway.loop_stop()
+                self.mqtt_gateway.disconnect()
+            except Exception as e:
+                logger.error(f"Error during MQTT cleanup: {e}")
+
+        if self.reader_instance is not None:
+            try:
+                self.reader_instance.close()
+                self.reader_instance = None
+            except Exception as e:
+                logger.error(f"Error during reader cleanup: {e}")
+
     def bootstrap(self) -> None:
         """
         Start the main application loop, handling MQTT and UHF reader interactions.
@@ -111,31 +156,56 @@ class Application:
             print(
                 "============================== RFID Agent - version 1.0.0 =============================="
             )
+            print("Press Ctrl+C to exit gracefully or close the console window.")
             self.__restart_reader_connection()
             self.__init_mqtt_gateway()
         except KeyboardInterrupt:
-            logger.info("Shutting down the application...")
+            logger.info("KeyboardInterrupt received - shutting down the application...")
             self.shutdown()
+        except Exception as e:
+            logger.error(f"Unexpected error in bootstrap: {e}")
+            self.shutdown()
+            raise
 
     def shutdown(self) -> None:
         """
         Gracefully shut down the application, ensuring all connections are closed.
         """
-        if self.mqtt_gateway is None:
-            return
-        self.mqtt_gateway.publish(
-            topic=PublishTopics.REPLY_SIGNAL.value,
-            payload=dumps(
-                {
-                    "isMQTTConnectionReady": False,
-                    "isReaderConnectionReady": False,
-                    "isReaderPlaying": False,
-                }
-            ).encode(),
-        )
-        self.mqtt_gateway.loop_stop()
-        self.mqtt_gateway.disconnect()
+        logger.info("Initiating graceful shutdown...")
+
+        # Stop reading if currently active
+        if self.is_reading:
+            logger.info("Stopping RFID reading...")
+            self.__handle_stop_reading()
+
+        # Send final status update via MQTT if connection exists
+        if hasattr(self, "mqtt_gateway") and self.mqtt_gateway is not None:
+            try:
+                logger.info("Sending final MQTT status update...")
+                self.mqtt_gateway.publish(
+                    topic=PublishTopics.REPLY_SIGNAL.value,
+                    payload=dumps(
+                        {
+                            "isMQTTConnectionReady": False,
+                            "isReaderConnectionReady": False,
+                            "isReaderPlaying": False,
+                        }
+                    ).encode(),
+                )
+                # Give a moment for the message to be sent
+                import time
+
+                time.sleep(0.5)
+
+                self.mqtt_gateway.loop_stop()
+                self.mqtt_gateway.disconnect()
+                logger.info("MQTT connection closed.")
+            except Exception as e:
+                logger.error(f"Error during MQTT shutdown: {e}")
+
+        # Close reader connection
         self.__handle_close_reader_connection()
+        logger.info("Application shutdown completed.")
 
     # region MQTT handlers
     def __init_mqtt_gateway(self) -> None:
@@ -221,7 +291,7 @@ class Application:
                 match action:
                     case Actions.PING.value:
                         self.__publish_connection_status()
-                        self.__handle_publish_data()
+                        self.__handle_restore_data()
 
                     case Actions.CONNECT.value:
                         Thread(
@@ -275,32 +345,27 @@ class Application:
 
     # region UHF Reader handlers
 
-    def __compress_data(self, data: set[str]) -> str:
+    def __handle_restore_data(self) -> None:
         """
-        Compress and encode data to be sent over MQTT.
+        Publish all scanned EPCs to the MQTT broker.
         """
-
-        json_data = dumps(list(data))
-        compressed_data = compress(json_data.encode())
-        encoded_data = b64encode(compressed_data).decode()
-        return encoded_data
-
-    def __handle_publish_data(self) -> None:
-        compressed_data = self.__compress_data(data=self.scanned_epcs)
-        self.mqtt_gateway.publish(
-            topic=PublishTopics.REPLY_DATA.value, payload=compressed_data
-        )
+        scanned_list = list(self.scanned_epcs)
+        for epc in scanned_list:
+            self.mqtt_gateway.publish(
+                topic=PublishTopics.REPLY_DATA.value,
+                payload=epc,
+            )
 
     def __handle_receive_epc(self, data: LogBaseEpcInfo) -> None:
         """
         Handle incoming EPC data from the UHF reader.
         """
         epc = data.epc.upper()
+        self.mqtt_gateway.publish(topic=PublishTopics.REPLY_DATA.value, payload=epc)
         if epc in self.scanned_epcs:
             return
-        logger.info(f"EPC :>>> {epc}")
         self.scanned_epcs.add(epc)
-        self.__handle_publish_data()
+        logger.debug(f"Total scanned EPCs: {len(self.scanned_epcs)}")
 
     def __handle_receive_epc_end(self, log: LogBaseEpcOver) -> None:
         logger.info(f"Stopped reading EPC with code: >>> {log.msgId}")

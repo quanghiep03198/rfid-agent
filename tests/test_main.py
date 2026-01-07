@@ -125,11 +125,14 @@ class TestApplication:
                 with patch.object(app, "shutdown") as mock_shutdown:
                     app.bootstrap()
 
-                    mock_print.assert_called_with(
+                    mock_print.assert_any_call(
                         "============================== RFID Agent - version 1.0.0 =============================="
                     )
+                    mock_print.assert_any_call(
+                        "Press Ctrl+C to exit gracefully or close the console window."
+                    )
                     mock_logger.info.assert_called_with(
-                        "Shutting down the application..."
+                        "KeyboardInterrupt received - shutting down the application..."
                     )
                     mock_shutdown.assert_called_once()
 
@@ -158,7 +161,9 @@ class TestApplication:
             app, "_Application__handle_close_reader_connection"
         ) as mock_close:
             app.shutdown()
-            mock_close.assert_not_called()
+            # Reader connection should always be closed during shutdown,
+            # even if mqtt_gateway is not available.
+            mock_close.assert_called_once()
 
     @patch("main.mqtt.Client")
     @patch("main.logger")
