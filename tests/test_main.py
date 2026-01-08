@@ -18,22 +18,33 @@ class TestApplication:
     @pytest.fixture
     def app(self):
         """Create an Application instance for testing."""
-        with patch("main.ConfigService.get_conf") as mock_config:
-            mock_config.side_effect = lambda section, key: {
-                "uhf_reader_tcp_ip": "192.168.1.100",
-                "uhf_reader_tcp_port": "8160",
-                "uhf_reader_ant": "1",
-                "uhf_reader_power": "10",
-            }.get(key, "")
+        with patch("main.signal.signal"):
+            with patch("main.atexit.register"):
+                with patch("main.ConfigService.get_conf") as mock_config:
 
-            with patch("main.get_ipv4", return_value="192.168.1.50"):
-                app = Application()
-                yield app
+                    def _fake_get_conf(*, section, key, default=""):
+                        # App-level config
+                        if section == ConfigSection.APP.value and key == "ip":
+                            return "192.168.1.50"
+                        # Reader config
+                        return {
+                            "uhf_reader_tcp_ip": "192.168.1.100",
+                            "uhf_reader_tcp_port": "8160",
+                            "uhf_reader_ant": "1",
+                            "uhf_reader_power": "10",
+                        }.get(key, default)
+
+                    mock_config.side_effect = _fake_get_conf
+
+                    with patch("main.get_ipv4", return_value="192.168.1.99"):
+                        app = Application()
+                        yield app
 
     def test_initialization(self, app):
         """Test Application initialization."""
-        # HOST is dynamic based on actual network, so just check it's a string
-        assert isinstance(app.HOST, str)
+        # MQTT_HOST may come from a configured IP (loaded at import-time) or fallback to get_ipv4().
+        assert isinstance(app.MQTT_HOST, str)
+        assert app.MQTT_HOST != ""
         assert app.MQTT_PORT == 1883
         assert app.reader_instance is None
         assert app.reader_ip == "192.168.1.100"
@@ -123,10 +134,13 @@ class TestApplication:
                 app, "_Application__init_mqtt_gateway", side_effect=KeyboardInterrupt
             ):
                 with patch.object(app, "shutdown") as mock_shutdown:
-                    app.bootstrap()
+                    with patch.object(
+                        app, "_Application__get_app_version", return_value="v9.9.9"
+                    ):
+                        app.bootstrap()
 
                     mock_print.assert_any_call(
-                        "============================== RFID Agent - version 1.0.0 =============================="
+                        "============================== RFID Agent - v9.9.9 =============================="
                     )
                     mock_print.assert_any_call(
                         "Press Ctrl+C to exit gracefully or close the console window."
@@ -188,7 +202,7 @@ class TestApplication:
 
         # Verify connection
         mock_client.connect.assert_called_once_with(
-            host=app.HOST, bind_address=app.HOST
+            host=app.MQTT_HOST, bind_address=app.MQTT_HOST
         )
         mock_client.loop_forever.assert_called_once()
 

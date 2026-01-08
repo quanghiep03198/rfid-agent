@@ -167,8 +167,10 @@ Create standalone executables for distribution:
 ### Windows
 
 ```batch
-scripts\build.bat
+py scripts\build.py --version $VERSION --type $TYPE
 ```
+
+_Version and Build type are required to build_
 
 ### Linux/macOS
 
