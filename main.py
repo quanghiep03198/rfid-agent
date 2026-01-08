@@ -2,6 +2,7 @@ import atexit
 import signal
 import sys
 from json import JSONDecodeError, dumps, loads
+from pathlib import Path
 from threading import Thread
 
 import paho.mqtt.client as mqtt
@@ -14,8 +15,13 @@ from helpers.logger import logger
 
 
 class Application:
+    CONFIGURED_IP = ConfigService.get_conf(
+        section=ConfigSection.APP.value,
+        key="ip",
+        default="",
+    )
 
-    HOST = get_ipv4()
+    MQTT_HOST = None
     """
     Host IP address for MQTT broker connection.
     """
@@ -24,6 +30,8 @@ class Application:
     """
     MQTT broker port.
     """
+
+    APP_VERSION = None
 
     reader_instance: GClient | None = None
 
@@ -87,6 +95,12 @@ class Application:
         self.__scanned_epcs = data
 
     def __init__(self):
+        self.MQTT_HOST = (
+            self.CONFIGURED_IP
+            if self.CONFIGURED_IP is not None and self.CONFIGURED_IP != ""
+            else get_ipv4()
+        )
+
         self.__is_reader_connection_ready = False
         self.__is_reading = False
         self.__scanned_epcs: set[str] = set()
@@ -147,14 +161,32 @@ class Application:
             except Exception as e:
                 logger.error(f"Error during reader cleanup: {e}")
 
+    def __get_app_version(default: str = "v1.0.0") -> str:
+        """Read version string from version.json if it exists.
+
+        Returns the version without the optional leading 'v' (e.g. 'v1.1.0' -> '1.1.0'),
+        falling back to `default` if anything goes wrong.
+        """
+        try:
+            version_file = Path(__file__).with_name("version.json")
+            if not version_file.exists():
+                return default
+            data = loads(version_file.read_text(encoding="utf-8"))
+            version = str(data.get("version", "") or "").strip()
+
+            return version or default
+        except Exception:
+            return default
+
     def bootstrap(self) -> None:
         """
         Start the main application loop, handling MQTT and UHF reader interactions.
         This method runs indefinitely until interrupted, managing connections and data flow.
         """
+        self.APP_VERSION = self.__get_app_version()
         try:
             print(
-                "============================== RFID Agent - version 1.0.0 =============================="
+                f"============================== RFID Agent - {self.APP_VERSION} =============================="
             )
             print("Press Ctrl+C to exit gracefully or close the console window.")
             self.__restart_reader_connection()
@@ -217,8 +249,8 @@ class Application:
             self.mqtt_gateway.on_disconnect = self.__on_mqtt_gateway_disconnect
             self.mqtt_gateway.on_message = self.__on_mqtt_gateway_message
             self.mqtt_gateway.connect(
-                host=self.HOST,
-                bind_address=self.HOST,
+                host=self.MQTT_HOST,
+                bind_address=self.MQTT_HOST,
             )
             self.mqtt_gateway.loop_forever()
             self.mqtt_gateway.publish(
