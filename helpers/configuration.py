@@ -9,6 +9,7 @@ from helpers.logger import logger
 
 
 class ConfigSection(Enum):
+    APP = "APP"
     READER = "READER"
 
 
@@ -18,6 +19,7 @@ __cfg_file__ = path.abspath(
 if not path.exists(__cfg_file__):
     with open(__cfg_file__, "w", encoding="utf-8") as configfile:
         configfile.write(f"[{ConfigSection.READER.value}]\n")
+        configfile.write("ip = \n")
         configfile.write("uhf_reader_tcp_ip = \n")
         configfile.write("uhf_reader_tcp_port = 8160\n")
         configfile.write("uhf_reader_ant = 1\n")
